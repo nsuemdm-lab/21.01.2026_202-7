@@ -254,3 +254,172 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     Инструменты: Все примеры показываем в VS Code, заливаем через FileZilla (или плагин SFTP), проверяем на реальном домене .beget.tech. Локальный OpenServer не используем, чтобы привыкать к продакшн-среде.
 
+
+    Это отличный вопрос. Данный фрагмент кода — это «сердце» логики регистрации, но сам по себе он работать не будет. Чтобы превратить его в рабочий учебный материал для семинара **21.01.2026**, нужно добавить к нему контекст: подключение к БД и HTML-форму.
+
+# Подробная инструкция: **куда этот код вставить, чем дополнить и как это работает**.
+
+---
+
+### ИНСТРУКЦИЯ К СЕМИНАРУ: Реализация `register.php`
+
+**Цель:** Создать единый файл, который и показывает форму регистрации, и обрабатывает её отправку.
+
+#### 1. Подготовка файла (Что делают пользователи)
+
+Студенты должны создать в VS Code файл **`register.php`** и поместить в него следующий **полный код**.
+
+Обратите внимание: я дополнил ваш фрагмент, добавив:
+1.  Подключение `require 'db.php';` (без этого переменная `$pdo` не существует).
+2.  HTML-разметку (Bootstrap 5), чтобы было куда вводить данные.
+3.  Вывод сообщений об ошибках в красивом блоке `alert`.
+
+**Полный код для копирования пользователями:**
+
+```php
+<?php
+// 1. Подключаем настройки БД (создан на прошлом занятии 14.01)
+require 'db.php'; 
+
+$errorMsg = '';
+$successMsg = '';
+
+// 2. Проверяем, была ли отправлена форма
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Очистка данных
+    $email = trim($_POST['email']);
+    $pass = $_POST['password'];
+    $passConfirm = $_POST['password_confirm'];
+
+    // 3. Валидация (Проверки)
+    if (empty($email) || empty($pass)) {
+        $errorMsg = "Заполните все поля!";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errorMsg = "Некорректный формат Email!";
+    } elseif ($pass !== $passConfirm) {
+        $errorMsg = "Пароли не совпадают!";
+    } else {
+        // 4. Если ошибок нет — ХЕШИРУЕМ и СОХРАНЯЕМ
+        
+        // Генерируем безопасный хеш (bcrypt)
+        $hash = password_hash($pass, PASSWORD_DEFAULT);
+
+        // Готовим SQL-запрос (Защита от SQL Injection)
+        $sql = "INSERT INTO users (email, password_hash, role) VALUES (:email, :hash, 'client')";
+        $stmt = $pdo->prepare($sql);
+
+        try {
+            $stmt->execute([
+                ':email' => $email,
+                ':hash' => $hash
+            ]);
+            $successMsg = "Регистрация успешна! <a href='login.php'>Войти</a>";
+        } catch (PDOException $e) {
+            // Код 23000 означает нарушение уникальности (дубликат email)
+            if ($e->getCode() == 23000) {
+                $errorMsg = "Такой email уже зарегистрирован.";
+            } else {
+                $errorMsg = "Ошибка БД: " . $e->getMessage();
+            }
+        }
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Регистрация</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Регистрация</h4>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Блок вывода сообщений -->
+                    <?php if($errorMsg): ?>
+                        <div class="alert alert-danger"><?= $errorMsg ?></div>
+                    <?php endif; ?>
+                    
+                    <?php if($successMsg): ?>
+                        <div class="alert alert-success"><?= $successMsg ?></div>
+                    <?php else: ?>
+
+                    <!-- Сама форма -->
+                    <form method="POST" action="register.php">
+                        <div class="mb-3">
+                            <label class="form-label">Email адрес</label>
+                            <input type="email" name="email" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Пароль</label>
+                            <input type="password" name="password" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Подтверждение пароля</label>
+                            <input type="password" name="password_confirm" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Зарегистрироваться</button>
+                    </form>
+                    <div class="mt-3 text-center">
+                        <a href="login.php">Уже есть аккаунт? Войти</a>
+                    </div>
+
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
+```
+
+#### 2. Пошаговый разбор кода (Методический комментарий)
+
+Во время семинара (Live Coding) вы должны разобрать следующие блоки:
+
+**А. Подключение (`require 'db.php'`)**
+*   **Вопрос:** "Почему мы не пишем настройки подключения прямо здесь?"
+*   **Ответ:** "Принцип DRY (Don't Repeat Yourself). Если пароль от базы изменится, мы поменяем его только в одном файле `db.php`."
+
+**Б. Валидация (`if (empty...)`)**
+*   **Акцент:** Мы проверяем данные **до** того, как начнем нагружать базу данных или процессор хешированием. Это экономит ресурсы.
+
+**В. Хеширование (`password_hash`) — КЛЮЧЕВОЙ МОМЕНТ МДК.09.03**
+*   Объясните, что переменная `$hash` будет содержать строку из 60 символов, начинающуюся на `$2y$`.
+*   Покажите, что даже если два пользователя введут пароль "12345", хеши будут **разными** (благодаря "соли").
+
+**Г. Блок `try-catch` и код 23000**
+*   Мы настроили поле `email` в базе данных как `UNIQUE` (на занятии 14.01).
+*   Когда мы пытаемся вставить дубль, MySQL выбрасывает ошибку.
+*   PDO перехватывает её. Мы проверяем код ошибки. Если это `23000` (Integrity constraint violation), мы говорим пользователю "Email занят", а не вываливаем страшную системную ошибку.
+
+#### 3. Порядок действий на паре (Практика)
+
+1.  **Создание:** Польватели создают файл `register.php` в VS Code.
+2.  **Загрузка:** Через FileZilla загружают файл в папку `public_html` на сервере Beget.
+3.  **Тест 1 (Успех):** Открывают браузер, вводят реальные данные. Должны увидеть зеленое сообщение "Регистрация успешна".
+4.  **Проверка в БД:** Заходят в phpMyAdmin на Beget, открывают таблицу `users`.
+    *   *Задание:* Найти свою запись и убедиться, что поле `password_hash` нечитаемо для человека.
+5.  **Тест 2 (Дубль):** Пробуют зарегистрироваться с тем же email еще раз. Должны увидеть красное сообщение "Такой email уже зарегистрирован".
+
+#### 4. Типичные ошибки Пользователей
+
+*   **Ошибка:** "Class 'PDO' not found" или "Undefined variable $pdo".
+    *   *Решение:* Забыли строку `require 'db.php';` или файл `db.php` не загружен на сервер.
+*   **Ошибка:** Белый экран после отправки формы.
+    *   *Решение:* Ошибка в синтаксисе PHP. Добавьте в начало файла `ini_set('display_errors', 1);` для отладки.
+*   **Ошибка:** Пароль в базе записан не полностью (обрезан).
+    *   *Решение:* Поле `password_hash` в БД имеет длину меньше 60 символов (например, VARCHAR(30)). Нужно изменить структуру таблицы через phpMyAdmin (сделать VARCHAR(255)).
+
